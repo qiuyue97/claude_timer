@@ -56,6 +56,7 @@ def load_timestamp(path=TIMESTAMP_FILE):
 
 
 PING_INTERVAL = timedelta(hours=5)
+PING_BUFFER_SECONDS = 60  # extra wait after target time to absorb server clock skew
 
 
 def calculate_next_ping(last_ping, daily_reset_time, now=None):
@@ -222,10 +223,11 @@ def main():
         if wait_sec > 0:
             logger.info(
                 f"Next ping at {next_ping.strftime('%Y-%m-%d %H:%M:%S')} "
-                f"(sleeping {wait_sec:.0f}s)"
+                f"(sleeping {wait_sec:.0f}s + {PING_BUFFER_SECONDS}s buffer)"
             )
             time.sleep(wait_sec)
 
+        time.sleep(PING_BUFFER_SECONDS)
         ok = send_ping(config, logger)
         if ok:
             last_ping = datetime.now()
