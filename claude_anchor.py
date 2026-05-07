@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -30,3 +31,18 @@ def build_env(config):
         env["HTTP_PROXY"] = config.get("http_proxy", config["https_proxy"])
         env["NO_PROXY"] = config.get("no_proxy", "localhost,127.0.0.1")
     return env
+
+
+def save_timestamp(ts=None, path=TIMESTAMP_FILE):
+    ts = ts or datetime.now()
+    Path(path).write_text(ts.isoformat())
+
+
+def load_timestamp(path=TIMESTAMP_FILE):
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        return datetime.fromisoformat(p.read_text().strip())
+    except ValueError:
+        return None
