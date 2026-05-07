@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -68,3 +70,50 @@ def calculate_next_ping(last_ping, daily_reset_time, now=None):
 
     next_interval = last_ping + PING_INTERVAL
     return next_interval if next_interval < next_reset else next_reset
+
+
+def check_claude_available(env):
+    try:
+        result = subprocess.run(
+            ["claude", "-v"],
+            env=env,
+            capture_output=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def send_ping(config, logger):
+    env = build_env(config)
+    logger.info("Sending ping to Claude...")
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "Hi", "--model", "haiku", "--no-session-persistence"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Ping timed out after 60s")
+        return False
+    if result.returncode == 0:
+        logger.info("Ping successful")
+        return True
+    logger.error(f"Ping failed (exit {result.returncode}): {result.stderr.strip()}")
+    return False
+
+
+def send_webhook_alert(url, message, logger):
+    if not url:
+        return
+    try:
+        data = json.dumps({"text": message}).encode()
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as exc:
+        logger.warning(f"Webhook delivery failed: {exc}")

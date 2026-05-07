@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
@@ -10,6 +11,7 @@ from claude_anchor import (
     load_config, build_env, DEFAULT_CONFIG,
     save_timestamp, load_timestamp,
     calculate_next_ping, PING_INTERVAL,
+    check_claude_available, send_ping, send_webhook_alert,
 )
 
 
@@ -71,29 +73,25 @@ def test_load_timestamp_returns_none_on_corrupt_file(tmp_path):
 # ---------- Task 4: scheduling ----------
 
 def test_next_ping_no_last_ping_before_reset():
-    # Before reset time: should return today's reset
     now = datetime(2026, 5, 7, 8, 0)
     result = calculate_next_ping(None, (9, 0), now=now)
     assert result == datetime(2026, 5, 7, 9, 0)
 
 
 def test_next_ping_no_last_ping_after_reset():
-    # Past today's reset: should return tomorrow's reset
     now = datetime(2026, 5, 7, 10, 0)
     result = calculate_next_ping(None, (9, 0), now=now)
     assert result == datetime(2026, 5, 8, 9, 0)
 
 
 def test_next_ping_interval_within_cycle():
-    # last_ping + 5h falls before next reset → use interval
     last_ping = datetime(2026, 5, 7, 9, 0)
     now = datetime(2026, 5, 7, 9, 1)
     result = calculate_next_ping(last_ping, (9, 0), now=now)
-    assert result == datetime(2026, 5, 7, 14, 0)  # 09:00 + 5h
+    assert result == datetime(2026, 5, 7, 14, 0)
 
 
 def test_next_ping_interval_before_next_reset():
-    # 14:00 + 5h = 19:00, next reset is tomorrow 09:00 → use 19:00
     last_ping = datetime(2026, 5, 7, 14, 0)
     now = datetime(2026, 5, 7, 14, 1)
     result = calculate_next_ping(last_ping, (9, 0), now=now)
@@ -101,7 +99,6 @@ def test_next_ping_interval_before_next_reset():
 
 
 def test_next_ping_interval_after_next_reset():
-    # 22:00 + 5h = 03:00 next day, next reset tomorrow 09:00 → 03:00 < 09:00 → use 03:00
     last_ping = datetime(2026, 5, 7, 22, 0)
     now = datetime(2026, 5, 7, 22, 1)
     result = calculate_next_ping(last_ping, (9, 0), now=now)
@@ -110,3 +107,54 @@ def test_next_ping_interval_after_next_reset():
 
 def test_ping_interval_is_5_hours():
     assert PING_INTERVAL == timedelta(hours=5)
+
+
+# ---------- Task 5: claude interaction ----------
+
+def test_check_claude_available_returns_true_on_success():
+    with patch("claude_anchor.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert check_claude_available(os.environ.copy()) is True
+
+
+def test_check_claude_available_returns_false_on_nonzero():
+    with patch("claude_anchor.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        assert check_claude_available(os.environ.copy()) is False
+
+
+def test_check_claude_available_returns_false_when_not_found():
+    with patch("claude_anchor.subprocess.run", side_effect=FileNotFoundError):
+        assert check_claude_available(os.environ.copy()) is False
+
+
+def test_send_ping_returns_true_on_success():
+    config = {"http_proxy": "", "https_proxy": "", "no_proxy": "", "webhook_url": ""}
+    logger = MagicMock()
+    with patch("claude_anchor.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        assert send_ping(config, logger) is True
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["claude", "-p", "Hi", "--model", "haiku", "--no-session-persistence"]
+
+
+def test_send_ping_returns_false_on_failure():
+    config = {"http_proxy": "", "https_proxy": "", "no_proxy": "", "webhook_url": ""}
+    logger = MagicMock()
+    with patch("claude_anchor.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stderr="error")
+        assert send_ping(config, logger) is False
+
+
+def test_send_webhook_alert_skips_empty_url():
+    logger = MagicMock()
+    with patch("claude_anchor.urllib.request.urlopen") as mock_open:
+        send_webhook_alert("", "test message", logger)
+        mock_open.assert_not_called()
+
+
+def test_send_webhook_alert_posts_json():
+    logger = MagicMock()
+    with patch("claude_anchor.urllib.request.urlopen") as mock_open:
+        send_webhook_alert("http://hooks.example.com/test", "ping failed", logger)
+        mock_open.assert_called_once()
