@@ -240,7 +240,7 @@ def main():
         time.sleep(buffer)
         ok = send_ping(config, logger)
         if ok:
-            last_ping = datetime.now()
+            last_ping = next_ping  # record scheduled target, not actual time
             save_timestamp(last_ping)
         else:
             send_webhook_alert(
