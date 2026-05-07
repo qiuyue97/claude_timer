@@ -111,6 +111,23 @@ def test_ping_interval_is_5_hours():
     assert PING_INTERVAL == timedelta(hours=5)
 
 
+def test_next_ping_skips_interval_when_window_would_overlap_reset():
+    # 20:00 + 5h = 01:00, but 01:00 window ends at 06:00 > reset 05:00
+    # → must skip 01:00 and go straight to next reset 05:00
+    last_ping = datetime(2026, 5, 7, 20, 0)
+    now = datetime(2026, 5, 7, 20, 1)
+    result = calculate_next_ping(last_ping, (5, 0), now=now)
+    assert result == datetime(2026, 5, 8, 5, 0)
+
+
+def test_next_ping_uses_interval_when_window_fits_before_reset():
+    # 15:00 + 5h = 20:00, 20:00 window ends at 01:00 < reset 05:00 next day → use 20:00
+    last_ping = datetime(2026, 5, 7, 15, 0)
+    now = datetime(2026, 5, 7, 15, 1)
+    result = calculate_next_ping(last_ping, (5, 0), now=now)
+    assert result == datetime(2026, 5, 7, 20, 0)
+
+
 # ---------- Task 5: claude interaction ----------
 
 def test_check_claude_available_returns_true_on_success():

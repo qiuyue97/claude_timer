@@ -62,8 +62,8 @@ def calculate_next_ping(last_ping, daily_reset_time, now=None):
     """Return the datetime of the next scheduled ping.
 
     - No last_ping: use today's reset (or tomorrow's if already past).
-    - last_ping + 5h < next reset: use the interval.
-    - Otherwise: use the next reset (don't miss the daily anchor).
+    - The window opened by next_interval ends before next_reset: use next_interval.
+    - Otherwise: use next_reset to preserve the daily anchor.
     """
     now = now or datetime.now()
     reset_h, reset_m = daily_reset_time
@@ -74,7 +74,9 @@ def calculate_next_ping(last_ping, daily_reset_time, now=None):
         return next_reset
 
     next_interval = last_ping + PING_INTERVAL
-    return next_interval if next_interval < next_reset else next_reset
+    # Only use next_interval if the window it opens (next_interval + 5h) ends by next_reset.
+    # Otherwise the new window would overlap with the daily anchor ping, wasting it.
+    return next_interval if next_interval + PING_INTERVAL <= next_reset else next_reset
 
 
 def check_claude_available(env):
