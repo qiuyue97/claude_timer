@@ -56,7 +56,7 @@ def load_timestamp(path=TIMESTAMP_FILE):
 
 
 PING_INTERVAL = timedelta(hours=5)
-PING_BUFFER_SECONDS = 30  # extra wait after target time (<60s, stays within same minute)
+PING_BUFFER_BASE = 10  # buffer grows by 10s per ping each day: 10s, 20s, 30s, 40s
 
 
 def calculate_next_ping(last_ping, daily_reset_time, now=None):
@@ -217,17 +217,27 @@ def main():
         f"Interval: {PING_INTERVAL}."
     )
 
+    ping_count = 0
     while True:
         next_ping = calculate_next_ping(last_ping, args.daily_reset)
+
+        # Reset counter at each daily anchor ping; otherwise increment
+        reset_h, reset_m = args.daily_reset
+        if next_ping.hour == reset_h and next_ping.minute == reset_m:
+            ping_count = 1
+        else:
+            ping_count = min(ping_count + 1, 4)
+        buffer = PING_BUFFER_BASE * ping_count  # 10s, 20s, 30s, 40s
+
         wait_sec = (next_ping - datetime.now()).total_seconds()
         if wait_sec > 0:
             logger.info(
                 f"Next ping at {next_ping.strftime('%Y-%m-%d %H:%M:%S')} "
-                f"(sleeping {wait_sec:.0f}s + {PING_BUFFER_SECONDS}s buffer)"
+                f"(ping #{ping_count}, sleeping {wait_sec:.0f}s + {buffer}s buffer)"
             )
             time.sleep(wait_sec)
 
-        time.sleep(PING_BUFFER_SECONDS)
+        time.sleep(buffer)
         ok = send_ping(config, logger)
         if ok:
             last_ping = datetime.now()
