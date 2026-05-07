@@ -1,0 +1,15 @@
+# design docs & planning files — not for repo
+docs/
+
+# claude code internal data
+.claude/
+
+# runtime state
+last_run_timestamp.txt
+claude_anchor.log
+claude_anchor.log.*
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
