@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -12,6 +13,7 @@ from claude_anchor import (
     save_timestamp, load_timestamp,
     calculate_next_ping, PING_INTERVAL,
     check_claude_available, send_ping, send_webhook_alert,
+    parse_daily_reset,
 )
 
 
@@ -158,3 +160,21 @@ def test_send_webhook_alert_posts_json():
     with patch("claude_anchor.urllib.request.urlopen") as mock_open:
         send_webhook_alert("http://hooks.example.com/test", "ping failed", logger)
         mock_open.assert_called_once()
+
+
+# ---------- Task 6: CLI arg parsing ----------
+
+def test_parse_daily_reset_valid_times():
+    assert parse_daily_reset("09:00") == (9, 0)
+    assert parse_daily_reset("23:59") == (23, 59)
+    assert parse_daily_reset("00:00") == (0, 0)
+
+
+def test_parse_daily_reset_invalid_format():
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_daily_reset("9am")
+
+
+def test_parse_daily_reset_invalid_values():
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_daily_reset("25:00")
