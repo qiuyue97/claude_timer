@@ -2,6 +2,8 @@ import argparse
 import json
 import logging
 import os
+import socket
+import struct
 import subprocess
 import sys
 import time
@@ -56,7 +58,34 @@ def load_timestamp(path=TIMESTAMP_FILE):
 
 
 PING_INTERVAL = timedelta(hours=5)
-PING_BUFFER_SECONDS = 60  # extra wait after target time to absorb server clock skew
+PING_BUFFER_SECONDS = 30  # extra wait after target time (<60s, stays within same minute)
+NTP_SERVER = "pool.ntp.org"
+_NTP_EPOCH_DELTA = 2208988800  # seconds between 1900-01-01 and 1970-01-01
+
+
+def get_ntp_offset(logger):
+    """Return (ntp_time - local_time) in seconds. Falls back to 0.0 on any error."""
+    try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        client.settimeout(5)
+        packet = b'\x1b' + 47 * b'\0'
+        t_send = time.time()
+        client.sendto(packet, (NTP_SERVER, 123))
+        data, _ = client.recvfrom(1024)
+        t_recv = time.time()
+        client.close()
+        ntp_time = struct.unpack('!12I', data)[10] - _NTP_EPOCH_DELTA
+        local_mid = (t_send + t_recv) / 2
+        offset = ntp_time - local_mid
+        logger.debug(f"NTP offset: {offset:+.2f}s")
+        return offset
+    except Exception as exc:
+        logger.warning(f"NTP query failed ({exc}), using local clock")
+        return 0.0
+
+
+def accurate_now(ntp_offset):
+    return datetime.now() + timedelta(seconds=ntp_offset)
 
 
 def calculate_next_ping(last_ping, daily_reset_time, now=None):
@@ -218,19 +247,21 @@ def main():
     )
 
     while True:
-        next_ping = calculate_next_ping(last_ping, args.daily_reset)
-        wait_sec = (next_ping - datetime.now()).total_seconds()
+        ntp_offset = get_ntp_offset(logger)
+        now = accurate_now(ntp_offset)
+        next_ping = calculate_next_ping(last_ping, args.daily_reset, now=now)
+        wait_sec = (next_ping - now).total_seconds()
         if wait_sec > 0:
             logger.info(
                 f"Next ping at {next_ping.strftime('%Y-%m-%d %H:%M:%S')} "
-                f"(sleeping {wait_sec:.0f}s + {PING_BUFFER_SECONDS}s buffer)"
+                f"(NTP offset {ntp_offset:+.1f}s, sleeping {wait_sec:.0f}s + {PING_BUFFER_SECONDS}s buffer)"
             )
             time.sleep(wait_sec)
 
         time.sleep(PING_BUFFER_SECONDS)
         ok = send_ping(config, logger)
         if ok:
-            last_ping = datetime.now()
+            last_ping = accurate_now(ntp_offset)
             save_timestamp(last_ping)
         else:
             send_webhook_alert(
