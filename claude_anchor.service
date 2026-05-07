@@ -1,0 +1,15 @@
+[Unit]
+Description=Claude Session Anchor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/claude_timer
+ExecStart=/path/to/venv/bin/python /path/to/claude_timer/claude_anchor.py --daily-reset=09:00
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
