@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from collections import namedtuple
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -98,6 +99,26 @@ def load_timestamp(path=TIMESTAMP_FILE):
 
 PING_INTERVAL = timedelta(hours=5)
 PING_BUFFER_BASE = 10  # buffer grows by 10s per ping each day: 10s, 20s, 30s, 40s
+
+# --- interactive PTY ping ---
+PTY_COLS = 120
+PTY_ROWS = 40
+PTY_TERM = "xterm-256color"
+PING_MESSAGE = "ping"
+PING_ARGV = ["claude", "--model", "haiku", "--no-session-persistence"]
+ONCE_BOOT_CAP = 30  # --once: fire after readiness, but no later than this many seconds
+
+PtyResult = namedtuple(
+    "PtyResult", ["reply_seen", "reply_text", "exited_early", "error_marker", "raw_tail"]
+)
+
+
+def compute_fire_at(next_ping, buffer_seconds):
+    return next_ping + timedelta(seconds=buffer_seconds)
+
+
+def compute_wake_at(fire_at, preboot_lead):
+    return fire_at - timedelta(seconds=preboot_lead)
 
 
 def calculate_next_ping(last_ping, daily_reset_time, now=None):

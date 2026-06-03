@@ -15,6 +15,7 @@ from claude_anchor import (
     check_claude_available, send_ping, send_webhook_alert,
     parse_daily_reset,
     strip_ansi, visible_char_count, find_error_marker,
+    PtyResult, compute_fire_at, compute_wake_at,
 )
 
 
@@ -175,6 +176,27 @@ def test_next_ping_uses_interval_when_window_fits_before_reset():
     now = datetime(2026, 5, 7, 15, 1)
     result = calculate_next_ping(last_ping, (5, 0), now=now)
     assert result == datetime(2026, 5, 7, 20, 0)
+
+
+# ---------- time math + result type ----------
+
+def test_compute_fire_at_adds_buffer_seconds():
+    next_ping = datetime(2026, 6, 16, 9, 0, 0)
+    assert compute_fire_at(next_ping, 30) == datetime(2026, 6, 16, 9, 0, 30)
+
+
+def test_compute_wake_at_subtracts_preboot_lead():
+    fire_at = datetime(2026, 6, 16, 9, 0, 30)
+    assert compute_wake_at(fire_at, 120) == datetime(2026, 6, 16, 8, 58, 30)
+
+
+def test_pty_result_fields():
+    r = PtyResult(reply_seen=True, reply_text="pong", exited_early=False,
+                  error_marker=None, raw_tail="...")
+    assert r.reply_seen is True
+    assert r.reply_text == "pong"
+    assert r.exited_early is False
+    assert r.error_marker is None
 
 
 # ---------- Task 5: claude interaction ----------
