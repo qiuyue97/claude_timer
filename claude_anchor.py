@@ -105,7 +105,9 @@ PTY_COLS = 120
 PTY_ROWS = 40
 PTY_TERM = "xterm-256color"
 PING_MESSAGE = "ping"
-PING_ARGV = ["claude", "--model", "haiku", "--no-session-persistence"]
+# NOTE: --no-session-persistence is print-mode (-p) only; the interactive TUI
+# rejects it and exits immediately. Interactive sessions persist by default.
+PING_ARGV = ["claude", "--model", "haiku"]
 ONCE_BOOT_CAP = 30  # --once: fire after readiness, but no later than this many seconds
 
 PtyResult = namedtuple(
@@ -244,6 +246,7 @@ def _drive_pty_session(argv, env, timing, fire_at, logger):
         proc = subprocess.Popen(
             argv, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
             env=child_env, start_new_session=True, close_fds=True,
+            cwd=str(Path(__file__).parent),  # always launch in the (trusted) project folder
         )
         os.close(slave_fd)
         slave_fd = -1

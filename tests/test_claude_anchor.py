@@ -230,9 +230,9 @@ def test_send_ping_success_when_reply_seen():
     logger = MagicMock()
     with patch("claude_anchor._drive_pty_session", return_value=_pty_result()) as drv:
         assert send_ping(config, logger) is True
-        # argv is interactive (no -p), with model + no-session-persistence
+        # argv is interactive (no -p); --no-session-persistence is print-mode only
         argv = drv.call_args[0][0]
-        assert argv == ["claude", "--model", "haiku", "--no-session-persistence"]
+        assert argv == ["claude", "--model", "haiku"]
 
 
 def test_send_ping_fails_when_no_reply():
