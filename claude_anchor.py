@@ -430,16 +430,21 @@ def main():
             ping_count = min(ping_count + 1, 4)
         buffer = PING_BUFFER_BASE * ping_count  # 10s, 20s, 30s, 40s
 
-        wait_sec = (next_ping - datetime.now()).total_seconds()
+        fire_at = compute_fire_at(next_ping, buffer)
+        wake_at = compute_wake_at(fire_at, config["timing"]["preboot_lead"])
+
+        # Wake PREBOOT_LEAD seconds early so cold-start jitter is absorbed before
+        # the anchor instant. The driver then waits internally until fire_at.
+        wait_sec = (wake_at - datetime.now()).total_seconds()
         if wait_sec > 0:
             logger.info(
-                f"Next ping at {next_ping.strftime('%Y-%m-%d %H:%M:%S')} "
-                f"(ping #{ping_count}, sleeping {wait_sec:.0f}s + {buffer}s buffer)"
+                f"Next ping at {fire_at.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"(ping #{ping_count}, +{buffer}s buffer); pre-warming at "
+                f"{wake_at.strftime('%H:%M:%S')} (sleeping {wait_sec:.0f}s)"
             )
             time.sleep(wait_sec)
 
-        time.sleep(buffer)
-        ok = send_ping(config, logger)
+        ok = send_ping(config, logger, fire_at=fire_at)
         if ok:
             last_ping = next_ping  # record scheduled target, not actual time
             save_timestamp(last_ping)
