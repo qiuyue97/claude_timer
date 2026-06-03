@@ -219,22 +219,53 @@ def test_check_claude_available_returns_false_when_not_found():
         assert check_claude_available(os.environ.copy()) is False
 
 
-def test_send_ping_returns_true_on_success():
-    config = {"http_proxy": "", "https_proxy": "", "no_proxy": "", "webhook_url": ""}
+def _pty_result(reply_seen=True, reply_text="pong", exited_early=False,
+                error_marker=None, raw_tail=""):
+    from claude_anchor import PtyResult
+    return PtyResult(reply_seen, reply_text, exited_early, error_marker, raw_tail)
+
+
+def test_send_ping_success_when_reply_seen():
+    config = {**DEFAULT_CONFIG, "webhook_url": ""}
     logger = MagicMock()
-    with patch("claude_anchor.subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
+    with patch("claude_anchor._drive_pty_session", return_value=_pty_result()) as drv:
         assert send_ping(config, logger) is True
-        cmd = mock_run.call_args[0][0]
-        assert cmd == ["claude", "-p", "Hi", "--model", "haiku", "--no-session-persistence"]
+        # argv is interactive (no -p), with model + no-session-persistence
+        argv = drv.call_args[0][0]
+        assert argv == ["claude", "--model", "haiku", "--no-session-persistence"]
 
 
-def test_send_ping_returns_false_on_failure():
-    config = {"http_proxy": "", "https_proxy": "", "no_proxy": "", "webhook_url": ""}
+def test_send_ping_fails_when_no_reply():
+    config = {**DEFAULT_CONFIG, "webhook_url": ""}
     logger = MagicMock()
-    with patch("claude_anchor.subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=1, stderr="error")
+    with patch("claude_anchor._drive_pty_session",
+               return_value=_pty_result(reply_seen=False, raw_tail="...")):
         assert send_ping(config, logger) is False
+
+
+def test_send_ping_fails_when_exited_early():
+    config = {**DEFAULT_CONFIG, "webhook_url": ""}
+    logger = MagicMock()
+    with patch("claude_anchor._drive_pty_session",
+               return_value=_pty_result(exited_early=True, raw_tail="boom")):
+        assert send_ping(config, logger) is False
+
+
+def test_send_ping_fails_on_error_marker():
+    config = {**DEFAULT_CONFIG, "webhook_url": ""}
+    logger = MagicMock()
+    with patch("claude_anchor._drive_pty_session",
+               return_value=_pty_result(error_marker="Please run /login")):
+        assert send_ping(config, logger) is False
+
+
+def test_send_ping_forwards_fire_at_to_driver():
+    config = {**DEFAULT_CONFIG, "webhook_url": ""}
+    logger = MagicMock()
+    fire_at = datetime(2026, 6, 16, 9, 0, 30)
+    with patch("claude_anchor._drive_pty_session", return_value=_pty_result()) as drv:
+        send_ping(config, logger, fire_at=fire_at)
+        assert drv.call_args.kwargs["fire_at"] == fire_at
 
 
 def test_send_webhook_alert_skips_empty_url():

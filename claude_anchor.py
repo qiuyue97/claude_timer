@@ -155,25 +155,27 @@ def check_claude_available(env):
         return False
 
 
-def send_ping(config, logger):
+def send_ping(config, logger, *, fire_at=None):
     env = build_env(config)
-    logger.info("Sending ping to Claude...")
-    try:
-        result = subprocess.run(
-            ["claude", "-p", "Hi", "--model", "haiku", "--no-session-persistence"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        logger.error("Ping timed out after 60s")
+    timing = config.get("timing", DEFAULT_CONFIG["timing"])
+    if fire_at is not None:
+        logger.info(f"Pre-warming Claude TUI; firing at {fire_at.strftime('%H:%M:%S')}...")
+    else:
+        logger.info("Sending interactive ping to Claude...")
+
+    result = _drive_pty_session(PING_ARGV, env, timing, fire_at=fire_at, logger=logger)
+
+    if result.exited_early:
+        logger.error(f"Claude exited before the message was sent. Output tail:\n{result.raw_tail}")
         return False
-    if result.returncode == 0:
-        logger.info("Ping successful")
-        return True
-    logger.error(f"Ping failed (exit {result.returncode}): {result.stderr.strip()}")
-    return False
+    if result.error_marker:
+        logger.error(f"Ping failed: detected '{result.error_marker}'. Output tail:\n{result.raw_tail}")
+        return False
+    if not result.reply_seen:
+        logger.error(f"No reply detected within timeout. Output tail:\n{result.raw_tail}")
+        return False
+    logger.info(f"Ping successful. Reply:\n{result.reply_text[:500]}")
+    return True
 
 
 def send_webhook_alert(url, message, logger):
