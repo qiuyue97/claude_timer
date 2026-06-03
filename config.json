@@ -5,7 +5,7 @@
   "webhook_url": "",
   "timing": {
     "preboot_lead": 120,
-    "quiet_period": 2,
+    "quiet_period": 6,
     "response_timeout": 60,
     "reply_min_chars": 10,
     "exit_wait": 5

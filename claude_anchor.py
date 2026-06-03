@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     "webhook_url": "",
     "timing": {
         "preboot_lead": 120,      # seconds: spawn the TUI this long before fire_at
-        "quiet_period": 2,        # seconds of no output ⇒ stream settled
+        "quiet_period": 6,        # seconds of no output ⇒ stream settled (must exceed the model's think pause)
         "response_timeout": 60,   # seconds: max wait for a reply after the message
         "reply_min_chars": 10,    # min visible reply chars (after fire) to count as a reply
         "exit_wait": 5,           # seconds after /exit before SIGTERM→SIGKILL

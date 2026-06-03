@@ -56,7 +56,7 @@ def test_build_env_skips_proxy_when_empty():
 def test_load_config_includes_timing_defaults(tmp_path):
     result = load_config(tmp_path / "nonexistent.json")
     assert result["timing"]["preboot_lead"] == 120
-    assert result["timing"]["quiet_period"] == 2
+    assert result["timing"]["quiet_period"] == 6
     assert result["timing"]["response_timeout"] == 60
     assert result["timing"]["reply_min_chars"] == 10
     assert result["timing"]["exit_wait"] == 5
@@ -67,7 +67,7 @@ def test_load_config_deep_merges_timing(tmp_path):
     cfg_path.write_text(json.dumps({"timing": {"preboot_lead": 30}}))
     result = load_config(cfg_path)
     assert result["timing"]["preboot_lead"] == 30       # overridden
-    assert result["timing"]["quiet_period"] == 2         # default preserved
+    assert result["timing"]["quiet_period"] == 6         # default preserved
     assert result["timing"]["exit_wait"] == 5            # default preserved
 
 

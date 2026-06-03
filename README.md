@@ -86,7 +86,7 @@ The `timing` block tunes the interactive PTY session. The whole block — and an
 | Key | Default | Description |
 |---|---|---|
 | `preboot_lead` | 120 | Seconds to spawn the TUI **before** the target send time, so cold-start jitter is absorbed before the window anchor. |
-| `quiet_period` | 2 | Seconds of no output that mark the stream as settled (used for readiness and reply detection). |
+| `quiet_period` | 6 | Seconds of no output that mark the stream as settled. Must exceed the model's "thinking" pause, or detection fires before the reply lands. |
 | `response_timeout` | 60 | Max seconds to wait for the model's reply after the message is sent. |
 | `reply_min_chars` | 10 | Minimum visible reply characters (after the message) required to count as a successful reply. |
 | `exit_wait` | 5 | Seconds to wait after `/exit` before escalating to SIGTERM, then SIGKILL. |
