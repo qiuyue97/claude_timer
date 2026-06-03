@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -39,6 +40,36 @@ def load_config(path=CONFIG_PATH):
     merged = {**DEFAULT_CONFIG, **data}
     merged["timing"] = {**DEFAULT_CONFIG["timing"], **data.get("timing", {})}
     return merged
+
+
+# --- interactive-session output parsing ---
+
+_ANSI_OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")  # OSC ... BEL/ST
+_ANSI_CSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")          # CSI ... final byte
+_ANSI_ESC = re.compile(r"\x1b[@-Z\\-_]")                       # other single escapes
+_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")        # control chars, keep \t\n\r
+
+ERROR_MARKERS = ("Invalid API key", "Please run /login", "API Error", "not logged in")
+
+
+def strip_ansi(data):
+    data = _ANSI_OSC.sub("", data)
+    data = _ANSI_CSI.sub("", data)
+    data = _ANSI_ESC.sub("", data)
+    data = _CTRL.sub("", data)
+    return data
+
+
+def visible_char_count(data):
+    return len(re.sub(r"\s+", "", strip_ansi(data)))
+
+
+def find_error_marker(data):
+    low = strip_ansi(data).lower()
+    for marker in ERROR_MARKERS:
+        if marker.lower() in low:
+            return marker
+    return None
 
 
 def build_env(config):

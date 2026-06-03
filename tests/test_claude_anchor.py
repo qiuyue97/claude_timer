@@ -14,6 +14,7 @@ from claude_anchor import (
     calculate_next_ping, PING_INTERVAL,
     check_claude_available, send_ping, send_webhook_alert,
     parse_daily_reset,
+    strip_ansi, visible_char_count, find_error_marker,
 )
 
 
@@ -66,6 +67,36 @@ def test_load_config_deep_merges_timing(tmp_path):
     assert result["timing"]["preboot_lead"] == 30       # overridden
     assert result["timing"]["quiet_period"] == 2         # default preserved
     assert result["timing"]["exit_wait"] == 5            # default preserved
+
+
+# ---------- output parsing helpers ----------
+
+def test_strip_ansi_removes_csi_color_codes():
+    assert strip_ansi("\x1b[31mhello\x1b[0m") == "hello"
+
+
+def test_strip_ansi_removes_osc_and_control_chars():
+    assert strip_ansi("\x1b]0;title\x07ab\x08c") == "abc"
+
+
+def test_strip_ansi_keeps_newlines():
+    assert strip_ansi("a\x1b[2Kb\nc") == "ab\nc"
+
+
+def test_visible_char_count_ignores_whitespace_and_ansi():
+    assert visible_char_count("\x1b[31ma b\tc\x1b[0m\n") == 3
+
+
+def test_find_error_marker_detects_login_prompt():
+    assert find_error_marker("...\nPlease run /login to continue\n") == "Please run /login"
+
+
+def test_find_error_marker_is_case_insensitive():
+    assert find_error_marker("ERROR: invalid api key") == "Invalid API key"
+
+
+def test_find_error_marker_returns_none_when_clean():
+    assert find_error_marker("Reply: everything is fine") is None
 
 
 # ---------- Task 3: timestamp ----------
