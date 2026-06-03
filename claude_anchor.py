@@ -19,16 +19,26 @@ DEFAULT_CONFIG = {
     "https_proxy": "",
     "no_proxy": "localhost,127.0.0.1",
     "webhook_url": "",
+    "timing": {
+        "preboot_lead": 120,      # seconds: spawn the TUI this long before fire_at
+        "quiet_period": 2,        # seconds of no output ⇒ stream settled
+        "response_timeout": 60,   # seconds: max wait for a reply after the message
+        "reply_min_chars": 10,    # min visible reply chars (after fire) to count as a reply
+        "exit_wait": 5,           # seconds after /exit before SIGTERM→SIGKILL
+    },
 }
 
 
 def load_config(path=CONFIG_PATH):
     p = Path(path)
-    if not p.exists():
-        return DEFAULT_CONFIG.copy()
-    with open(p) as f:
-        data = json.load(f)
-    return {**DEFAULT_CONFIG, **data}
+    if p.exists():
+        with open(p) as f:
+            data = json.load(f)
+    else:
+        data = {}
+    merged = {**DEFAULT_CONFIG, **data}
+    merged["timing"] = {**DEFAULT_CONFIG["timing"], **data.get("timing", {})}
+    return merged
 
 
 def build_env(config):
