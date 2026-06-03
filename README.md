@@ -8,6 +8,8 @@ Claude Code's usage limit is calculated on a 5-hour sliding window, starting fro
 
 This script sends a ping at a specified daily time to anchor the window to a predictable slot (e.g., 09:00–14:00), then renews every 5 hours to keep the window continuous throughout your working hours.
 
+> **Note (2026-06-15 billing change):** non-interactive `claude -p` calls no longer count toward subscription usage and **stop triggering the 5-hour window** (they bill the separate Agent SDK credit pool). The ping therefore drives a **real interactive TUI session over a pseudo-terminal (PTY)** instead. The window starts at the exact moment the message is sent, so each ping **pre-warms** the TUI ahead of time and fires the message precisely at the anchor instant — cold-start jitter is absorbed before the anchor, leaving only irreducible network latency. Success is confirmed by detecting the model's reply (logged to `claude_anchor.log`).
+
 **Example (daily-reset=09:00):**
 
 ```
@@ -21,7 +23,7 @@ This script sends a ping at a specified daily time to anchor the window to a pre
 
 At most 4 pings per day. A follow-up ping is only scheduled if the window it opens would fully close before the next daily reset — this prevents a new window from overlapping the next day's anchor.
 
-**Actual send times** are slightly after the target to absorb clock precision errors: ping #1 +10s, #2 +20s, #3 +30s, #4 +40s. The counter resets to +10s each day.
+**Actual send times** are slightly after the target to absorb clock precision errors: ping #1 +10s, #2 +20s, #3 +30s, #4 +40s. The counter resets to +10s each day. Each ping spawns the TUI `preboot_lead` seconds early (default 120s) and only sends the message at the buffered target instant, so the window start stays aligned regardless of how long the TUI takes to boot.
 
 ## Requirements
 
@@ -36,8 +38,8 @@ At most 4 pings per day. A follow-up ping is only scheduled if the window it ope
 cd ~
 claude   # follow the prompts to log in, send any message, then Ctrl+C
 
-# 2. Verify non-interactive mode works
-claude -p "Hi" --model haiku --no-session-persistence
+# 2. Verify an interactive session works (this is what the anchor now drives)
+claude --model haiku   # type a message, confirm a reply, then /exit
 ```
 
 ## Installation
@@ -58,7 +60,14 @@ Edit `config.json`:
   "http_proxy": "http://127.0.0.1:7890",
   "https_proxy": "http://127.0.0.1:7890",
   "no_proxy": "localhost,127.0.0.1",
-  "webhook_url": ""
+  "webhook_url": "",
+  "timing": {
+    "preboot_lead": 120,
+    "quiet_period": 2,
+    "response_timeout": 60,
+    "reply_min_chars": 10,
+    "exit_wait": 5
+  }
 }
 ```
 
@@ -69,6 +78,18 @@ Edit `config.json`:
 | `webhook_url` | Webhook URL for failure alerts (Slack, Feishu, etc.). Leave empty to disable. |
 
 > **Note:** Proxy settings are explicitly injected into the subprocess environment from `config.json`, not inherited from the shell — so they work correctly under `nohup` or systemd.
+
+### Timing (optional)
+
+The `timing` block tunes the interactive PTY session. The whole block — and any individual key — is optional; missing values fall back to the defaults shown above.
+
+| Key | Default | Description |
+|---|---|---|
+| `preboot_lead` | 120 | Seconds to spawn the TUI **before** the target send time, so cold-start jitter is absorbed before the window anchor. |
+| `quiet_period` | 2 | Seconds of no output that mark the stream as settled (used for readiness and reply detection). |
+| `response_timeout` | 60 | Max seconds to wait for the model's reply after the message is sent. |
+| `reply_min_chars` | 10 | Minimum visible reply characters (after the message) required to count as a successful reply. |
+| `exit_wait` | 5 | Seconds to wait after `/exit` before escalating to SIGTERM, then SIGKILL. |
 
 ## Usage
 

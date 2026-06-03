@@ -28,6 +28,8 @@ claude -p "Hi" --model haiku --no-session-persistence
 
 ## 推荐方案：用 `expect` 驱动 TUI 会话
 
+> **实现说明（2026-06-03）**：本项目最终未使用独立 `expect` 脚本，而是用**纯 Python `pty`** 在 `claude_anchor.py` 内驱动交互式 TUI（零额外依赖、跨平台可测）。在此基础上增加了**预热 + 到点发**：提前 `preboot_lead` 秒 spawn TUI，到精确的锚点时刻才发送消息，以消除冷启动抖动、保证 5 小时窗口起点精度；成功判定改为"检测到模型回复"。设计/计划见 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`。
+
 把现有 cron 任务替换成下面的 expect 脚本。原理：模拟真实的交互式 TUI 会话，发一条消息后 `/exit` 退出。
 
 ```bash
