@@ -189,6 +189,143 @@ def send_webhook_alert(url, message, logger):
         logger.warning(f"Webhook delivery failed: {exc}")
 
 
+def _drive_pty_session(argv, env, timing, fire_at, logger):
+    """Drive an interactive TUI session over a real PTY.
+
+    fire_at is None       -> once mode: fire as soon as the TUI looks ready (capped).
+    fire_at is a datetime -> precise mode: pre-warm, then fire exactly at fire_at.
+    Returns a PtyResult. Does not raise on child errors. POSIX only.
+    """
+    if os.name != "posix":
+        raise RuntimeError("PTY ping requires a POSIX system")
+    import pty
+    import select
+    import struct
+    import fcntl
+    import termios
+
+    quiet_period = float(timing.get("quiet_period", 2))
+    response_timeout = float(timing.get("response_timeout", 60))
+    reply_min_chars = int(timing.get("reply_min_chars", 10))
+    exit_wait = float(timing.get("exit_wait", 5))
+
+    master_fd, slave_fd = pty.openpty()
+    proc = None
+    raw = []        # all decoded output
+    post = []       # output accumulated after the message is sent
+    fired = False
+
+    def read_once(window):
+        """Read available bytes for up to `window` seconds. Returns (got_bytes, eof)."""
+        r, _, _ = select.select([master_fd], [], [], window)
+        if master_fd not in r:
+            return False, False
+        try:
+            data = os.read(master_fd, 65536)
+        except OSError:
+            return False, True
+        if not data:
+            return False, True
+        chunk = data.decode("utf-8", "replace")
+        raw.append(chunk)
+        if fired:
+            post.append(chunk)
+        return True, False
+
+    def raw_tail():
+        return "\n".join(strip_ansi("".join(raw)).splitlines()[-20:])
+
+    try:
+        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", PTY_ROWS, PTY_COLS, 0, 0))
+        child_env = dict(env)
+        child_env["TERM"] = PTY_TERM
+        proc = subprocess.Popen(
+            argv, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+            env=child_env, start_new_session=True, close_fds=True,
+        )
+        os.close(slave_fd)
+        slave_fd = -1
+
+        # ---- pre-warm / readiness phase (until fire_at, or until ready in once mode) ----
+        last_activity = time.monotonic()
+        boot_deadline = time.monotonic() + ONCE_BOOT_CAP  # only used in once mode
+        while True:
+            if proc.poll() is not None:
+                while True:  # drain anything still buffered
+                    got, eof = read_once(0.1)
+                    if eof or not got:
+                        break
+                return PtyResult(False, "", True, find_error_marker("".join(raw)), raw_tail())
+
+            got, eof = read_once(0.2)
+            if got:
+                last_activity = time.monotonic()
+            if eof:
+                return PtyResult(False, "", True, find_error_marker("".join(raw)), raw_tail())
+
+            ready = (len(raw) > 0) and (time.monotonic() - last_activity >= quiet_period)
+            if fire_at is None:
+                if ready or time.monotonic() >= boot_deadline:
+                    break
+            else:
+                if datetime.now() >= fire_at:
+                    break
+
+        # ---- fire the message ----
+        os.write(master_fd, (PING_MESSAGE + "\r").encode())
+        fired = True
+        logger.info("Message sent; waiting for reply...")
+
+        # ---- reply detection phase ----
+        reply_deadline = time.monotonic() + response_timeout
+        last_activity = time.monotonic()
+        reply_seen = False
+        while time.monotonic() < reply_deadline:
+            if proc.poll() is not None:
+                break
+            got, eof = read_once(0.2)
+            if got:
+                last_activity = time.monotonic()
+            if eof:
+                break
+            enough = visible_char_count("".join(post)) >= reply_min_chars
+            quiesced = time.monotonic() - last_activity >= quiet_period
+            if enough and quiesced:
+                reply_seen = True
+                break
+        if not reply_seen:
+            reply_seen = visible_char_count("".join(post)) >= reply_min_chars
+
+        # ---- graceful exit ----
+        if proc.poll() is None:
+            os.write(master_fd, b"/exit\r")
+            end = time.monotonic() + exit_wait
+            while time.monotonic() < end and proc.poll() is None:
+                read_once(0.2)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+
+        reply_text = strip_ansi("".join(post)).strip()
+        return PtyResult(reply_seen, reply_text, False, find_error_marker("".join(raw)), raw_tail())
+    finally:
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        if slave_fd != -1:
+            try:
+                os.close(slave_fd)
+            except OSError:
+                pass
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+
+
 def setup_logging():
     logger = logging.getLogger("claude_anchor")
     logger.setLevel(logging.INFO)

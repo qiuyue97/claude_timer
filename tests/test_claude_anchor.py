@@ -16,6 +16,7 @@ from claude_anchor import (
     parse_daily_reset,
     strip_ansi, visible_char_count, find_error_marker,
     PtyResult, compute_fire_at, compute_wake_at,
+    _drive_pty_session,
 )
 
 
@@ -248,6 +249,47 @@ def test_send_webhook_alert_posts_json():
     with patch("claude_anchor.urllib.request.urlopen") as mock_open:
         send_webhook_alert("http://hooks.example.com/test", "ping failed", logger)
         mock_open.assert_called_once()
+
+
+# ---------- PTY driver (POSIX only) ----------
+
+_FAKE = Path(__file__).parent / "fake_claude.py"
+_FAKE_CRASH = Path(__file__).parent / "fake_claude_crash.py"
+_DRIVER_TIMING = {
+    "preboot_lead": 120, "quiet_period": 0.3, "response_timeout": 10,
+    "reply_min_chars": 5, "exit_wait": 3,
+}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY is POSIX-only")
+def test_drive_pty_session_detects_reply_once_mode():
+    result = _drive_pty_session(
+        [sys.executable, str(_FAKE)], os.environ.copy(),
+        _DRIVER_TIMING, fire_at=None, logger=MagicMock(),
+    )
+    assert result.exited_early is False
+    assert result.reply_seen is True
+    assert "received your message" in result.reply_text
+    assert result.error_marker is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY is POSIX-only")
+def test_drive_pty_session_precise_mode_waits_for_fire_at():
+    fire_at = datetime.now() + timedelta(seconds=1)
+    result = _drive_pty_session(
+        [sys.executable, str(_FAKE)], os.environ.copy(),
+        _DRIVER_TIMING, fire_at=fire_at, logger=MagicMock(),
+    )
+    assert result.reply_seen is True
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY is POSIX-only")
+def test_drive_pty_session_reports_early_exit():
+    result = _drive_pty_session(
+        [sys.executable, str(_FAKE_CRASH)], os.environ.copy(),
+        _DRIVER_TIMING, fire_at=None, logger=MagicMock(),
+    )
+    assert result.exited_early is True
 
 
 # ---------- Task 6: CLI arg parsing ----------
